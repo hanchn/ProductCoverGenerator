@@ -1,6 +1,9 @@
 export class EventHandler {
     constructor(generator) {
         this.generator = generator;
+        this.dragged = false;
+        this.startX = 0;
+        this.startY = 0;
     }
 
     initEventListeners() {
@@ -12,6 +15,7 @@ export class EventHandler {
 
     handleCanvasClick(e) {
         if (this.generator.isEditing) return;
+        if (!this.generator.currentTemplate || !this.generator.currentTemplate.elements) return;
 
         const rect = this.generator.canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
@@ -50,10 +54,6 @@ export class EventHandler {
             }
             this.generator.selectedElement = clickedElement;
             this.generator.showEditPanel(clickedElement);
-            
-            if (clickedElement.type === 'text') {
-                this.generator.textEditor.startTextEditing(clickedElement);
-            }
         } else {
             this.generator.selectedElement = null;
             this.generator.selectedElements.clear();
@@ -62,9 +62,13 @@ export class EventHandler {
     }
 
     handleMouseDown(e) {
+        if (!this.generator.currentTemplate || !this.generator.currentTemplate.elements) return;
         const rect = this.generator.canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
+        this.dragged = false;
+        this.startX = x;
+        this.startY = y;
 
         this.generator.currentTemplate.elements.forEach(element => {
             if (element.editable && this.generator.isPointInElement(x, y, element)) {
@@ -72,6 +76,8 @@ export class EventHandler {
                 this.generator.isDragging = true;
                 this.generator.dragStartX = x - element.x;
                 this.generator.dragStartY = y - element.y;
+                // 拖拽开始时隐藏右侧抽屉
+                this.generator.editPanel.classList.remove('active');
             }
         });
     }
@@ -82,6 +88,11 @@ export class EventHandler {
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
 
+            // 判断是否拖拽
+            if (Math.abs(x - this.startX) > 3 || Math.abs(y - this.startY) > 3) {
+                this.dragged = true;
+            }
+
             this.generator.selectedElement.x = x - this.generator.dragStartX;
             this.generator.selectedElement.y = y - this.generator.dragStartY;
 
@@ -89,7 +100,13 @@ export class EventHandler {
         }
     }
 
-    handleMouseUp() {
-        this.generator.isDragging = false;
+    handleMouseUp(e) {
+        if (this.generator.isDragging) {
+            this.generator.isDragging = false;
+            if (!this.dragged && this.generator.selectedElement) {
+                // 没有拖拽，视为点击，弹出编辑面板
+                this.generator.showEditPanel(this.generator.selectedElement);
+            }
+        }
     }
 } 

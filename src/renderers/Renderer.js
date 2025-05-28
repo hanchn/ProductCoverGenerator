@@ -7,27 +7,34 @@ export class Renderer {
     render(template) {
         if (!template) return;
         
+        // 清除画布
         this.ctx.clearRect(0, 0, this.generator.canvas.width, this.generator.canvas.height);
         
+        // 首先渲染背景
+        const backgroundElement = template.elements.find(el => el.type === 'background');
+        if (backgroundElement) {
+            this.drawBackground(backgroundElement);
+        }
+        
+        // 然后渲染其他元素
         template.elements.forEach(element => {
-            switch (element.type) {
-                case 'background':
-                    this.drawBackground(element);
-                    break;
-                case 'shape':
-                    this.drawShape(element);
-                    break;
-                case 'text':
-                    this.drawText(element);
-                    break;
-                case 'image':
-                    this.drawImage(element);
-                    break;
-            }
+            if (element.type !== 'background') {
+                switch (element.type) {
+                    case 'shape':
+                        this.drawShape(element);
+                        break;
+                    case 'text':
+                        this.drawText(element);
+                        break;
+                    case 'image':
+                        this.drawImage(element);
+                        break;
+                }
 
-            // 绘制选中状态
-            if (this.generator.selectedElements.has(element)) {
-                this.drawSelectionBox(element);
+                // 绘制选中状态
+                if (this.generator.selectedElements.has(element)) {
+                    this.drawSelectionBox(element);
+                }
             }
         });
     }
@@ -119,21 +126,25 @@ export class Renderer {
             const textMetrics = this.ctx.measureText(element.text);
             const padding = element.padding ? parseInt(element.padding) : 10;
             const borderRadius = element.borderRadius ? parseInt(element.borderRadius) : 5;
-            
             this.ctx.fillStyle = element.backgroundColor;
             this.roundRect(
                 element.x - padding,
-                element.y - element.fontSize - padding,
+                element.y - padding,
                 textMetrics.width + padding * 2,
                 element.fontSize + padding * 2,
                 borderRadius
             );
             this.ctx.fill();
+            // 绘制文字（稍微往上移）
+            this.ctx.fillStyle = element.color;
+            this.ctx.textBaseline = 'top';
+            this.ctx.fillText(element.text, element.x, element.y + padding / 4);
+        } else {
+            // 没有背景色时，正常绘制
+            this.ctx.fillStyle = element.color;
+            this.ctx.textBaseline = 'top';
+            this.ctx.fillText(element.text, element.x, element.y);
         }
-        
-        // 绘制文字
-        this.ctx.fillStyle = element.color;
-        this.ctx.fillText(element.text, element.x, element.y);
         
         this.ctx.restore();
     }
@@ -205,12 +216,14 @@ export class Renderer {
         this.ctx.setLineDash([5, 5]);
         
         if (element.type === 'text') {
-            const textMetrics = this.ctx.measureText(element.text);
+            this.ctx.font = `${element.fontWeight ? element.fontWeight + ' ' : ''}${element.fontSize}px ${element.fontFamily}`;
+            const textWidth = this.ctx.measureText(element.text).width;
+            // 线框与 fillText 匹配，不加多余padding
             this.ctx.strokeRect(
-                element.x - 5,
-                element.y - element.fontSize - 5,
-                textMetrics.width + 10,
-                element.fontSize + 10
+                element.x,
+                element.y,
+                textWidth,
+                element.fontSize
             );
         } else {
             this.ctx.strokeRect(
