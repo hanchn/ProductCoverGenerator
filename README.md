@@ -141,6 +141,5 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 
 ## 联系方式
 
-- 项目维护者：[Your Name](https://github.com/yourusername)
-- 项目链接：[https://github.com/yourusername/banner-editor](https://github.com/yourusername/banner-editor)
+
 
