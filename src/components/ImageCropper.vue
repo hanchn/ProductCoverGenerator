@@ -273,13 +273,13 @@ export default {
     },
     
     confirmCrop() {
-      if (!this.cropRect || !this.fabricImage) {
+      if (!this.cropRect || !this.imageObject) {
         console.error('裁剪区域或图片未初始化');
         return;
       }
     
       const rect = this.cropRect;
-      const image = this.fabricImage;
+      const image = this.imageObject; // 改为使用 imageObject
       const canvas = this.cropperCanvas;
       const canvasZoom = canvas.getZoom();
       const vpt = canvas.viewportTransform;
@@ -288,27 +288,46 @@ export default {
       const originalWidth = image.width;
       const originalHeight = image.height;
       
-      // 计算图片在画布上的实际位置（考虑缩放和平移）
+      // 获取图片的缩放比例
+      const imageScaleX = image.scaleX || 1;
+      const imageScaleY = image.scaleY || 1;
+      
+      console.log('图片缩放比例:', { imageScaleX, imageScaleY });
+      
+      // 计算图片在画布上的实际位置和尺寸（考虑图片缩放、画布缩放和平移）
       const imageLeft = (image.left - vpt[4]) / canvasZoom;
       const imageTop = (image.top - vpt[5]) / canvasZoom;
+      const imageDisplayWidth = (originalWidth * imageScaleX) / canvasZoom;
+      const imageDisplayHeight = (originalHeight * imageScaleY) / canvasZoom;
+      
       const rectLeft = (rect.left - vpt[4]) / canvasZoom;
       const rectTop = (rect.top - vpt[5]) / canvasZoom;
+      const rectWidth = (rect.width * rect.scaleX) / canvasZoom;
+      const rectHeight = (rect.height * rect.scaleY) / canvasZoom;
       
-      // 计算裁剪区域在原始图片上的坐标和尺寸
-      const cropLeft = rectLeft - imageLeft;
-      const cropTop = rectTop - imageTop;
-      const cropWidth = (rect.width * rect.scaleX) / canvasZoom;
-      const cropHeight = (rect.height * rect.scaleY) / canvasZoom;
+      // 计算裁剪区域相对于图片显示区域的位置（0-1之间的比例）
+      const relativeLeft = (rectLeft - imageLeft) / imageDisplayWidth;
+      const relativeTop = (rectTop - imageTop) / imageDisplayHeight;
+      const relativeWidth = rectWidth / imageDisplayWidth;
+      const relativeHeight = rectHeight / imageDisplayHeight;
+      
+      // 将相对位置转换为原始图片像素坐标
+      const cropLeft = relativeLeft * originalWidth;
+      const cropTop = relativeTop * originalHeight;
+      const cropWidth = relativeWidth * originalWidth;
+      const cropHeight = relativeHeight * originalHeight;
     
-      // 确保裁剪区域有效且在图片范围内
+      // 确保裁剪区域在图片范围内
       const finalCropLeft = Math.max(0, Math.min(cropLeft, originalWidth));
       const finalCropTop = Math.max(0, Math.min(cropTop, originalHeight));
       const maxWidth = originalWidth - finalCropLeft;
       const maxHeight = originalHeight - finalCropTop;
-      const finalCropWidth = Math.max(1, Math.min(cropWidth, maxWidth)); // 确保最小为1
-      const finalCropHeight = Math.max(1, Math.min(cropHeight, maxHeight)); // 确保最小为1
+      const finalCropWidth = Math.max(1, Math.min(Math.abs(cropWidth), maxWidth));
+      const finalCropHeight = Math.max(1, Math.min(Math.abs(cropHeight), maxHeight));
     
       console.log('原始图片尺寸:', { originalWidth, originalHeight });
+      console.log('图片显示尺寸:', { imageDisplayWidth, imageDisplayHeight });
+      console.log('裁剪区域相对位置:', { relativeLeft, relativeTop, relativeWidth, relativeHeight });
       console.log('裁剪参数（原始像素）:', { 
         finalCropLeft, 
         finalCropTop, 
