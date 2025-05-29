@@ -296,37 +296,52 @@ export default {
       link.click();
     },
     applyTemplate() {
-      const template = this.templates.find(t => t.id === this.selectedTemplate);
-      if (template) {
-        this.canvas.clear();
-        this.canvas.setBackgroundColor(template.backgroundColor, () => {
-          this.canvas.renderAll();
-        });
-        if (template.objects) {
-          template.objects.forEach(element => {
-            let fabricObject;
-            switch (element.type) {
-              case 'i-text':
-                fabricObject = new fabric.IText(element.text, element);
-                break;
-              case 'rect':
-                fabricObject = new fabric.Rect(element);
-                break;
-              case 'circle':
-                fabricObject = new fabric.Circle(element);
-                break;
-              case 'triangle':
-                 fabricObject = new fabric.Triangle(element);
-                 break;
-            }
-            if (fabricObject) {
-                this.canvas.add(fabricObject);
-            }
-          });
-          this.canvas.renderAll();
+  const template = this.templates.find(t => t.id === this.selectedTemplate);
+  if (template) {
+    this.canvas.clear();
+    this.canvas.setBackgroundColor(template.backgroundColor, () => {
+      this.canvas.renderAll();
+    });
+    if (template.objects) {
+      template.objects.forEach(element => {
+        let fabricObject;
+        switch (element.type) {
+          case 'i-text':
+            fabricObject = new fabric.IText(element.text, element);
+            break;
+          case 'rect':
+            fabricObject = new fabric.Rect(element);
+            break;
+          case 'circle':
+            fabricObject = new fabric.Circle(element);
+            break;
+          case 'triangle':
+            fabricObject = new fabric.Triangle(element);
+            break;
+          case 'image':
+            // 处理图片元素
+            fabric.Image.fromURL(element.src, (img) => {
+              img.set({
+                left: element.left,
+                top: element.top,
+                width: element.width,
+                height: element.height,
+                rx: element.rx || 0,
+                ry: element.ry || 0
+              });
+              this.canvas.add(img);
+              this.canvas.renderAll();
+            });
+            break;
         }
-      }
-    },
+        if (fabricObject) {
+          this.canvas.add(fabricObject);
+        }
+      });
+      this.canvas.renderAll();
+    }
+  }
+},
     addText() {
       const text = new fabric.IText('New Text', {
         left: 100,
@@ -505,4 +520,4 @@ export default {
 
 <style scoped>
 /* 样式已通过 main.scss 全局引入，这里可以添加组件特定的样式 */
-</style> 
+</style>
