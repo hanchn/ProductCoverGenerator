@@ -1,0 +1,44 @@
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  background-color: #f0f0f0;
+  border-bottom: 1px solid #ccc;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+
+  .left-section,
+  .right-section {
+    display: flex;
+    align-items: center;
+  }
+
+  button {
+    margin-right: 10px;
+    flex-shrink: 0;
+  }
+
+  .select {
+    width: 85px;
+    margin-right: 10px;
+  }
+
+  .properties-panel input[type="color"],
+  .sidebar input[type="color"] {
+    width: 34px !important;
+    height: 34px !important;
+    padding: 0 !important;
+    border: 1px solid #ccc !important;
+    border-radius: 4px !important;
+    min-width: 34px !important;
+    min-height: 34px !important;
+  }
+}
+
+.main {
+  // ... existing code ...
+} 
