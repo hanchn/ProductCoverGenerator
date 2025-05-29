@@ -2,8 +2,15 @@
   <div class="image-cropper-modal" v-if="visible">
     <div class="modal-content">
       <h3>裁剪图片</h3>
-      <div class="cropper-area">
+      <div class="cropper-area" ref="cropperArea">
         <canvas ref="cropperCanvas"></canvas>
+      </div>
+      <div class="zoom-controls">
+        <button class="zoom-btn" @click="zoomIn">放大</button>
+        <button class="zoom-btn" @click="zoomOut">缩小</button>
+        <button class="zoom-btn" @click="fitToScreen">适应屏幕</button>
+        <button class="zoom-btn" @click="actualSize">原始大小</button>
+        <span class="zoom-info">缩放: {{Math.round(currentZoom * 100)}}%</span>
       </div>
       <div class="modal-actions">
         <button class="button secondary" @click="cancelCrop">取消</button>
@@ -32,7 +39,14 @@ export default {
     return {
       cropperCanvas: null,
       imageObject: null,
-      cropRect: null
+      cropRect: null,
+      currentZoom: 1,
+      originalImageWidth: 0,
+      originalImageHeight: 0,
+      canvasWidth: 0,
+      canvasHeight: 0,
+      isDragging: false,
+      lastPanPoint: null
     };
   },
   watch: {
@@ -41,12 +55,12 @@ export default {
         this.$nextTick(() => {
           this.initCropperCanvas();
         });
-
       } else if (!newValue && this.cropperCanvas) {
         this.cropperCanvas.dispose();
         this.cropperCanvas = null;
         this.imageObject = null;
         this.cropRect = null;
+        this.currentZoom = 1;
       }
     },
     imageDataUrl(newValue) {
@@ -65,59 +79,100 @@ export default {
       }
 
       // 获取容器尺寸
-      const cropperArea = this.$refs.cropperCanvas.parentElement;
-      const maxWidth = cropperArea.clientWidth - 40; // 留出边距
-      const maxHeight = cropperArea.clientHeight - 40;
+      const cropperArea = this.$refs.cropperArea;
+      const containerWidth = cropperArea.clientWidth - 40;
+      const containerHeight = cropperArea.clientHeight - 40;
+      
+      this.canvasWidth = containerWidth;
+      this.canvasHeight = containerHeight;
 
-      // 临时初始化canvas
+      // 初始化canvas
       this.cropperCanvas = new fabric.Canvas(this.$refs.cropperCanvas, {
-        width: maxWidth,
-        height: maxHeight,
-        selection: false // 禁用多选
+        width: containerWidth,
+        height: containerHeight,
+        selection: false
+      });
+
+      // 添加鼠标滚轮缩放事件 - 以画布中心为缩放中心
+      this.cropperCanvas.on('mouse:wheel', (opt) => {
+        const delta = opt.e.deltaY;
+        let zoom = this.cropperCanvas.getZoom();
+        zoom *= 0.999 ** delta;
+        
+        // 设置缩放范围：0.1x 到 20x
+        if (zoom > 20) zoom = 20;
+        if (zoom < 0.1) zoom = 0.1;
+        
+        // 以画布中心为缩放中心，而不是鼠标位置
+        const center = {
+          x: this.canvasWidth / 2,
+          y: this.canvasHeight / 2
+        };
+        
+        this.cropperCanvas.zoomToPoint(center, zoom);
+        this.currentZoom = zoom;
+        opt.e.preventDefault();
+        opt.e.stopPropagation();
+      });
+
+      // 添加拖拽平移功能
+      this.cropperCanvas.on('mouse:down', (opt) => {
+        const evt = opt.e;
+        if (evt.altKey === true || evt.ctrlKey === true || evt.button === 1) {
+          this.isDragging = true;
+          this.cropperCanvas.selection = false;
+          this.lastPanPoint = { x: evt.clientX, y: evt.clientY };
+          evt.preventDefault();
+        }
+      });
+
+      this.cropperCanvas.on('mouse:move', (opt) => {
+        if (this.isDragging) {
+          const e = opt.e;
+          const vpt = this.cropperCanvas.viewportTransform;
+          vpt[4] += e.clientX - this.lastPanPoint.x;
+          vpt[5] += e.clientY - this.lastPanPoint.y;
+          this.cropperCanvas.requestRenderAll();
+          this.lastPanPoint = { x: e.clientX, y: e.clientY };
+        }
+      });
+
+      this.cropperCanvas.on('mouse:up', () => {
+        this.isDragging = false;
+        this.cropperCanvas.selection = true;
       });
 
       // 加载图片
       fabric.Image.fromURL(this.imageDataUrl, (img) => {
         this.imageObject = img;
+        this.originalImageWidth = img.width;
+        this.originalImageHeight = img.height;
 
         console.log(`原始图片尺寸: ${img.width}x${img.height}`);
-        console.log(`可用画布尺寸: ${maxWidth}x${maxHeight}`);
+        console.log(`容器尺寸: ${containerWidth}x${containerHeight}`);
 
-        // 计算缩放比例，保持图片比例
-        const scaleX = maxWidth / img.width;
-        const scaleY = maxHeight / img.height;
-        const scale = Math.min(scaleX, scaleY, 1); // 不放大图片
+        // 默认以原始大小显示图片
+        const scale = 1;
+        this.currentZoom = 1;
 
-        const scaledWidth = img.width * scale;
-        const scaledHeight = img.height * scale;
-
-        console.log(`缩放比例: ${scale}`);
-        console.log(`缩放后尺寸: ${scaledWidth}x${scaledHeight}`);
-
-        // 重新设置canvas尺寸为图片实际显示尺寸
-        this.cropperCanvas.setDimensions({
-          width: scaledWidth,
-          height: scaledHeight
-        });
-
-        // 设置图片属性
+        // 设置图片属性 - 居中显示
         img.set({
           scaleX: scale,
           scaleY: scale,
-          left: 0,
-          top: 0,
-          selectable: false, // 图片不可选择
-          evented: false // 图片不响应事件
+          left: (containerWidth - img.width) / 2,
+          top: (containerHeight - img.height) / 2,
+          selectable: false,
+          evented: false
         });
 
         // 添加图片到canvas
         this.cropperCanvas.add(img);
 
         // 创建裁切矩形
-        const cropWidth = Math.min(scaledWidth * 0.8, scaledWidth);
-        const cropHeight = Math.min(scaledHeight * 0.8, scaledHeight);
-        const cropLeft = (scaledWidth - cropWidth) / 2;
-        const cropTop = (scaledHeight - cropHeight) / 2;
+        const cropWidth = Math.min(img.width * 0.6, 300);
+        const cropHeight = Math.min(img.height * 0.6, 300);
+        const cropLeft = (containerWidth - cropWidth) / 2;
+        const cropTop = (containerHeight - cropHeight) / 2;
 
         this.cropRect = new fabric.Rect({
           left: cropLeft,
@@ -137,43 +192,80 @@ export default {
           selectable: true,
           hasControls: true,
           hasBorders: true,
-          lockRotation: true, // 禁止旋转
-          minScaleLimit: 0.1 // 最小缩放限制
-        });
-
-        // 限制裁切区域不能超出图片边界
-        this.cropRect.on('moving', (e) => {
-          const obj = e.target;
-          const left = Math.max(0, Math.min(obj.left, scaledWidth - obj.width * obj.scaleX));
-          const top = Math.max(0, Math.min(obj.top, scaledHeight - obj.height * obj.scaleY));
-          obj.set({ left, top });
-        });
-
-        this.cropRect.on('scaling', (e) => {
-          const obj = e.target;
-          const maxWidth = scaledWidth - obj.left;
-          const maxHeight = scaledHeight - obj.top;
-          
-          if (obj.width * obj.scaleX > maxWidth) {
-            obj.scaleX = maxWidth / obj.width;
-          }
-          if (obj.height * obj.scaleY > maxHeight) {
-            obj.scaleY = maxHeight / obj.height;
-          }
-          
-          // 确保不会缩放到负值
-          obj.scaleX = Math.max(0.1, obj.scaleX);
-          obj.scaleY = Math.max(0.1, obj.scaleY);
+          lockRotation: true
         });
 
         this.cropperCanvas.add(this.cropRect);
         this.cropperCanvas.setActiveObject(this.cropRect);
         this.cropperCanvas.renderAll();
 
-        console.log('裁切器初始化完成');
+        console.log('裁切器初始化完成 - 原始大小居中显示');
       }, {
-        crossOrigin: 'anonymous' // 处理跨域图片
+        crossOrigin: 'anonymous'
       });
+    },
+
+    // 缩放控制方法 - 以画布中心为缩放中心
+    zoomIn() {
+      let zoom = this.cropperCanvas.getZoom();
+      zoom = zoom * 1.2;
+      if (zoom > 20) zoom = 20;
+      
+      const center = {
+        x: this.canvasWidth / 2,
+        y: this.canvasHeight / 2
+      };
+      
+      this.cropperCanvas.zoomToPoint(center, zoom);
+      this.currentZoom = zoom;
+    },
+
+    zoomOut() {
+      let zoom = this.cropperCanvas.getZoom();
+      zoom = zoom / 1.2;
+      if (zoom < 0.1) zoom = 0.1;
+      
+      const center = {
+        x: this.canvasWidth / 2,
+        y: this.canvasHeight / 2
+      };
+      
+      this.cropperCanvas.zoomToPoint(center, zoom);
+      this.currentZoom = zoom;
+    },
+
+    // 适应屏幕大小 - 居中显示
+    fitToScreen() {
+      if (!this.imageObject) return;
+      
+      const scaleX = this.canvasWidth / this.originalImageWidth;
+      const scaleY = this.canvasHeight / this.originalImageHeight;
+      const scale = Math.min(scaleX, scaleY, 1);
+      
+      // 计算居中位置
+      const scaledWidth = this.originalImageWidth * scale;
+      const scaledHeight = this.originalImageHeight * scale;
+      const centerX = (this.canvasWidth - scaledWidth) / 2;
+      const centerY = (this.canvasHeight - scaledHeight) / 2;
+      
+      this.cropperCanvas.setZoom(scale);
+      this.cropperCanvas.viewportTransform = [scale, 0, 0, scale, centerX, centerY];
+      this.currentZoom = scale;
+      this.cropperCanvas.renderAll();
+    },
+
+    // 显示原始大小 - 居中显示
+    actualSize() {
+      if (!this.imageObject) return;
+      
+      // 计算居中位置
+      const centerX = (this.canvasWidth - this.originalImageWidth) / 2;
+      const centerY = (this.canvasHeight - this.originalImageHeight) / 2;
+      
+      this.cropperCanvas.setZoom(1);
+      this.cropperCanvas.viewportTransform = [1, 0, 0, 1, centerX, centerY];
+      this.currentZoom = 1;
+      this.cropperCanvas.renderAll();
     },
     
     cancelCrop() {
@@ -181,47 +273,101 @@ export default {
     },
     
     confirmCrop() {
-      if (!this.imageObject || !this.cropRect) {
-        console.error('图片或裁切区域未初始化');
+      if (!this.cropRect || !this.fabricImage) {
+        console.error('裁剪区域或图片未初始化');
         return;
       }
-
+    
       const rect = this.cropRect;
-      const image = this.imageObject;
-
+      const image = this.fabricImage;
+      const canvas = this.cropperCanvas;
+      const canvasZoom = canvas.getZoom();
+      const vpt = canvas.viewportTransform;
+      
+      // 获取原始图片尺寸
+      const originalWidth = image.width;
+      const originalHeight = image.height;
+      
+      // 计算图片在画布上的实际位置（考虑缩放和平移）
+      const imageLeft = (image.left - vpt[4]) / canvasZoom;
+      const imageTop = (image.top - vpt[5]) / canvasZoom;
+      const rectLeft = (rect.left - vpt[4]) / canvasZoom;
+      const rectTop = (rect.top - vpt[5]) / canvasZoom;
+      
       // 计算裁剪区域在原始图片上的坐标和尺寸
-      const imageScale = image.scaleX;
-      const cropLeft = rect.left / imageScale;
-      const cropTop = rect.top / imageScale;
-      const cropWidth = (rect.width * rect.scaleX) / imageScale;
-      const cropHeight = (rect.height * rect.scaleY) / imageScale;
-
-      console.log('裁剪参数:', { cropLeft, cropTop, cropWidth, cropHeight });
-
-      // 创建临时canvas进行裁剪
+      const cropLeft = rectLeft - imageLeft;
+      const cropTop = rectTop - imageTop;
+      const cropWidth = (rect.width * rect.scaleX) / canvasZoom;
+      const cropHeight = (rect.height * rect.scaleY) / canvasZoom;
+    
+      // 确保裁剪区域有效且在图片范围内
+      const finalCropLeft = Math.max(0, Math.min(cropLeft, originalWidth));
+      const finalCropTop = Math.max(0, Math.min(cropTop, originalHeight));
+      const maxWidth = originalWidth - finalCropLeft;
+      const maxHeight = originalHeight - finalCropTop;
+      const finalCropWidth = Math.max(1, Math.min(cropWidth, maxWidth)); // 确保最小为1
+      const finalCropHeight = Math.max(1, Math.min(cropHeight, maxHeight)); // 确保最小为1
+    
+      console.log('原始图片尺寸:', { originalWidth, originalHeight });
+      console.log('裁剪参数（原始像素）:', { 
+        finalCropLeft, 
+        finalCropTop, 
+        finalCropWidth, 
+        finalCropHeight 
+      });
+    
+      // 验证裁剪参数
+      if (finalCropWidth <= 0 || finalCropHeight <= 0) {
+        console.error('裁剪尺寸无效:', { finalCropWidth, finalCropHeight });
+        alert('裁剪区域无效，请重新选择裁剪区域');
+        return;
+      }
+    
+      // 创建临时canvas
       const tempCanvas = document.createElement('canvas');
       const tempCtx = tempCanvas.getContext('2d');
       
-      tempCanvas.width = cropWidth;
-      tempCanvas.height = cropHeight;
-
+      tempCanvas.width = Math.round(finalCropWidth);
+      tempCanvas.height = Math.round(finalCropHeight);
+    
       // 创建临时图片对象
       const tempImg = new Image();
       tempImg.crossOrigin = 'anonymous';
       tempImg.onload = () => {
-        // 在临时canvas上绘制裁剪后的图片
-        tempCtx.drawImage(
-          tempImg,
-          cropLeft, cropTop, cropWidth, cropHeight,
-          0, 0, cropWidth, cropHeight
-        );
-
-        // 转换为DataURL
-        const croppedImageDataUrl = tempCanvas.toDataURL('image/png', 1.0);
-        
-        // 触发裁剪完成事件
-        this.$emit('cropped', croppedImageDataUrl);
-        this.$emit('closed');
+        try {
+          tempCtx.drawImage(
+            tempImg,
+            Math.round(finalCropLeft), 
+            Math.round(finalCropTop), 
+            Math.round(finalCropWidth), 
+            Math.round(finalCropWidth), 
+            0, 
+            0, 
+            Math.round(finalCropWidth), 
+            Math.round(finalCropHeight)
+          );
+    
+          const croppedImageDataUrl = tempCanvas.toDataURL('image/png', 1.0);
+          
+          console.log('裁剪完成，输出尺寸:', tempCanvas.width + 'x' + tempCanvas.height);
+          
+          // 验证生成的数据URL
+          if (croppedImageDataUrl && croppedImageDataUrl !== 'data:,') {
+            this.$emit('cropped', croppedImageDataUrl);
+            this.$emit('closed');
+          } else {
+            console.error('生成的图片数据无效');
+            alert('裁剪失败，请重试');
+          }
+        } catch (error) {
+          console.error('裁剪过程中发生错误:', error);
+          alert('裁剪失败，请重试');
+        }
+      };
+      
+      tempImg.onerror = () => {
+        console.error('图片加载失败');
+        alert('图片加载失败，请重试');
       };
       
       tempImg.src = this.imageDataUrl;
@@ -270,10 +416,40 @@ export default {
   justify-content: center;
   align-items: center;
   width: 100%;
-  overflow: hidden;
+  overflow: auto;
   border: 1px solid #ddd;
   border-radius: 4px;
   background-color: #f9f9f9;
+  position: relative;
+}
+
+.zoom-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 10px 0;
+  padding: 10px;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+}
+
+.zoom-btn {
+  padding: 6px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background-color: white;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.zoom-btn:hover {
+  background-color: #e9ecef;
+}
+
+.zoom-info {
+  font-size: 12px;
+  color: #666;
+  margin-left: 10px;
 }
 
 .modal-actions {
